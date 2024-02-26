@@ -1,0 +1,32 @@
+* {
+	background-color: #262335;
+	border: 1px solid #5A3267;
+	font: 10pt "Arial Black";
+	color: #ffffff;
+}
+
+QPushButton {
+	background-color: #171520;
+	border-width: 2px;
+	border-radius: 3px;
+	min-width: 50px;
+	padding: 5px;
+}
+QPushButton:disabled {
+	background-color: #322D45;
+	color: #7A7A7A;
+}
+QPushButton:hover {
+	background-color: #686282;
+}
+QPushButton:pressed {
+	background-color: #201745;
+}
+
+QLabel {
+	border: none;
+}
+QCheckBox {
+	border: none;
+}
+		
