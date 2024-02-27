@@ -7,22 +7,40 @@ from PySide6.QtGui import QImage, QPixmap, QColor
 
 from encoding import Decoder, Encoder
 
-
+from box import CustomDialog
+import math
 
 class MainWindow(QMainWindow):
+	''' Main window of the application '''
 	def __init__(self):
 		super().__init__()
 
-		self.setWindowTitle("Image Editor")
+		self.setWindowTitle("ULBMP viewer")
 
 		# Create a layout for the main window
 		layout = QVBoxLayout()
 
-		# Create a label to display the loaded image
-		# self.image_label = QLabel()
-		# layout.addWidget(self.image_label)
+		# Initialize the buttons
+		self.init_buttons(layout)
 
-		# Create a button to load an image
+		# Create a graphics view to display the image
+		self.graphics_view = QGraphicsView()
+		self.graphics_view.setMinimumWidth(640)
+		self.graphics_view.setMinimumHeight(480)
+		self.graphics_view.hide();
+		layout.addWidget(self.graphics_view) 
+
+		# Create a scene to hold the image
+		self.scene = QGraphicsScene()
+		self.graphics_view.setScene(self.scene)
+
+		# Create a widget to hold the layout
+		widget = QWidget()
+		widget.setLayout(layout)
+		self.setCentralWidget(widget)
+	
+	def init_buttons(self, layout: QVBoxLayout) -> None:
+		''' Initialize the buttons '''
 		load_button = QPushButton("Load Image")
 		load_button.clicked.connect(self.load_image)
 		load_button.setCursor(Qt.PointingHandCursor)
@@ -36,23 +54,7 @@ class MainWindow(QMainWindow):
 		self.save_button.setCursor(Qt.PointingHandCursor)
 		self.save_button.setDisabled(True)
 
-		# Create a graphics view to display the image
-		self.graphics_view = QGraphicsView()
-		self.graphics_view.setFixedWidth(640)
-		self.graphics_view.setFixedHeight(480)
-		self.graphics_view.hide();
-		layout.addWidget(self.graphics_view) 
-
-		# Create a scene to hold the image
-		self.scene = QGraphicsScene()
-		self.graphics_view.setScene(self.scene)
-
-		# Create a widget to hold the layout
-		widget = QWidget()
-		widget.setLayout(layout)
-		self.setCentralWidget(widget)
-
-	def error_message(self, message):
+	def error_message(self, message: str) -> None:
 		''' Error message box '''
 		error_dialog = QErrorMessage(self)
 		error_dialog.setWindowTitle("Error")
@@ -60,7 +62,7 @@ class MainWindow(QMainWindow):
 		error_dialog.setModal(True) # FIXME : not working and QError already is modal 
 		error_dialog.exec()
 	
-	def message(self, title, message, color=None, timeout=0):
+	def message(self, title: str, message: str, color: str=None, timeout: int=0) -> QMessageBox:
 		''' Custom message box '''
 		message_box = QMessageBox()
 		message_box.setWindowTitle(title)
@@ -78,7 +80,7 @@ class MainWindow(QMainWindow):
 		message_box.exec()
 		return message_box
 
-	def image_to_qimage(self):
+	def image_to_qimage(self) -> QImage:
 		''' Create a QImage from the loaded image '''
 		qimage = QImage(self.img.width, self.img.height, QImage.Format_RGB32)
 
@@ -88,13 +90,14 @@ class MainWindow(QMainWindow):
 				qimage.setPixelColor(x, y, QColor(pixel.red, pixel.green, pixel.blue))
 		return qimage
 
-	def load_image(self):
+	def load_image(self) -> None:
 		''' Load an image from a file '''
 		file_dialog = QFileDialog()
 		file_path, _ = file_dialog.getOpenFileName(self, "Load Image", "", "Image Files (*.png , *.ulbmp)")
 		
 		if file_path:
 			load = self.message("Loading", "Loading image...", "#FFA500", 1000)
+			
 			if (file_path.endswith(".ulbmp")):
 				try:
 					self.img = Decoder().load_from(file_path)
@@ -112,19 +115,54 @@ class MainWindow(QMainWindow):
 				self.error_message("Invalid file format. Please select a .ulbmp file.")
 			# load.close()
 
-	def save_image(self):
+	def save_image(self) -> None:
 		''' Save the image to a file '''
 		file_dialog = QFileDialog()
 		file_path, _ = file_dialog.getSaveFileName(self, "Save Image", "", "Image Files (*.ulbmp)")
-		if file_path:
-			try :
-				version, ok = QInputDialog.getInt(self, "Version", "Enter the version:", 1, 1, 2)
-				if ok:
-					Encoder(self.img, version).save_to(file_path)
-			except Exception as e:
-				return self.error_message(f"Encoder error: {str(e)}")
-			self.message("Success", "✔️ Image saved successfully!", "#00ED64", 3000)
 
+		if not file_path:
+			return
+
+		try:
+			colors = self.getColors()
+			print(len(colors))
+			version, ok = QInputDialog.getInt(self, "Version", "Enter the version:", 1, 1, 3)
+			if (not ok):
+				return
+
+			depth, checked = None, None
+			if (version == 3):
+				dialog = CustomDialog(self)
+				dialog.setTitles("v3 parameters")
+				dialog.setText("Enter the depth:", " RLE compression")
+				x = str(int(math.log2(len(colors))))
+				print(len(colors), x)
+				index = dialog.comboBox.findText(str(x), Qt.MatchExactly)
+				if index == -1:  # If exact value is not found
+					# Find the closest larger value
+					for i in range(dialog.comboBox.count()):
+						if int(dialog.comboBox.itemText(i)) > int(x):
+							index = i
+							break
+				dialog.comboBox.setCurrentIndex(index)
+				if (not dialog.exec()):
+					return
+
+				depth, checked = dialog.getValues()
+
+			Encoder(self.img, version, depth=depth, rle=checked, colors=colors).save_to(file_path)
+			self.message("Success", "✔️ Image saved successfully!", "#00ED64", 3000)
+		except Exception as e:
+			self.error_message(f"Encoder error: {str(e)}")
+	
+	def getColors(self):
+		''' Return the number of unique colors in the image '''
+		colors = set()
+		for y in range(self.img.height):
+			for x in range(self.img.width):
+				pixel = self.img[x, y]
+				colors.add(pixel)
+		return colors
 
 def load_stylesheet(file: str) -> str:
 	''' Load a stylesheet from a file '''

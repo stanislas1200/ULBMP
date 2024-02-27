@@ -9,24 +9,27 @@ C = "\u001b[0m"
 
 class Encoder:
 	"""Encodes an image to the ULBMP format."""
-	def __init__(self, img: Image, version: int=1): # TODO : version 3, 4 # FIXME : asked __init__(self, img: Image)
+	def __init__(self, img: Image, version: int=1, **kwargs): # TODO : version 3, 4 # FIXME : asked __init__(self, img: Image)
 		self.img = img
 		self.version = version
+		self.depth = kwargs.get('depth', 0)
+		self.rle: bool = kwargs.get('rle', 0)
+		self.colors = kwargs.get('colors', 0)
 
-	def write_pixel(self, file, pixel: Pixel) -> None:
+	def write_pixel(self, file, pixel: Pixel, ppb: int=1) -> None:
 		"""Write a pixel to the file.
 		:param file: The file to write to. This should be a file-like object (i.e., an object that has a `write()` method).
 		"""
-		file.write(pixel.red.to_bytes(1, byteorder='little'))
-		file.write(pixel.green.to_bytes(1, byteorder='little'))
-		file.write(pixel.blue.to_bytes(1, byteorder='little'))
+		file.write(pixel.red.to_bytes(ppb, byteorder='little'))
+		file.write(pixel.green.to_bytes(ppb, byteorder='little'))
+		file.write(pixel.blue.to_bytes(ppb, byteorder='little'))
 
 	def v1(self, file) -> None:
 		"""version 1.0 of the ULBMP format"""
 		for pixel in self.img.pixels:
 			self.write_pixel(file, pixel)
 
-	def v2(self, file) -> None:
+	def v2(self, file, ppb: int=1) -> None:
 		"""version 2.0 of the ULBMP format"""
 		i = 0
 
@@ -38,15 +41,54 @@ class Encoder:
 				run_length += 1
 
 			file.write(run_length.to_bytes(1, byteorder='little'))
-			self.write_pixel(file, pixel)
+			self.write_pixel(file, pixel, ppb)
 			i += run_length
+
+	def v3(self, file) -> None:
+		"""version 3.0 of the ULBMP format"""
+		self.colors = list(self.colors)
+		# print(self.depth, self.rle, self.colors)
+		#chekc valid values
+		if (self.depth < 1 or self.depth > 24):
+			raise Exception('Invalid depth')
+		if (self.depth <= 8 and len(self.colors) > (1 << self.depth)):
+			raise Exception(f'Invalid number of colors. \nGot {len(self.colors)}\nExpected {1 << self.depth}')
+		if (self.depth <= 8): # TODO : check if always works + rle
+			pixels_per_byte = 8 // self.depth
+			total_pixels = self.img.width * self.img.height
+			pixels = self.img.pixels
+			
+			for i in range(0, total_pixels, pixels_per_byte):
+				byte = 0
+
+				for j in range(pixels_per_byte):
+					if (i + j >= total_pixels):
+						break
+					print(self.colors.index(pixels[i + j]))
+					byte |= (self.colors.index(pixels[i + j]) << ((pixels_per_byte - 1 - j) * self.depth))
+				
+				file.write(byte.to_bytes(1, byteorder='little'))
+		else:
+			if (not self.rle):
+				self.v1(file)
+			else:
+				self.v2(file)
+
+
+
 
 	def save_to(self, path: str) -> None: #TODO: Implement this method using ULBMP any version
 		"""Save the image to a file in the ULBMP format."""
 		with open(path, 'wb') as file:
 			file.write(b"ULBMP")
 			file.write(self.version.to_bytes(1, byteorder='little')) # 1.0 version
-			file.write(b'\x0c\x00') # header size 12 little endian
+			if (self.version == 3):
+				if (self.depth <= 8):
+					file.write((14 + len(self.colors) * 3).to_bytes(2, byteorder='little'))
+				else:
+					file.write((14).to_bytes(2, byteorder='little'))
+			else:
+				file.write((12).to_bytes(2, byteorder='little')) # header size 12 little endian
 			file.write(self.img.width.to_bytes(2, byteorder='little'))
 			file.write(self.img.height.to_bytes(2, byteorder='little'))
 
@@ -55,6 +97,13 @@ class Encoder:
 					self.v1(file)
 				case 2:
 					self.v2(file)
+				case 3:
+					file.write(self.depth.to_bytes(1, byteorder='little'))
+					file.write(self.rle.to_bytes(1, byteorder='little'))
+					if (self.depth <= 8):
+						for color in self.colors:
+							self.write_pixel(file, color)
+					self.v3(file)
 				case _:
 					raise Exception(f'Unsupported version {self.version}') # TODO : raise before writing
 

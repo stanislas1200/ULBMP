@@ -21,6 +21,9 @@ class Pixel:
 			return self._red == other._red and self._green == other._green and self._blue == other._blue
 		return False
 	
+	def __hash__(self): # not asked
+		return hash((self._red, self._green, self._blue))
+	
 	@property
 	def red(self) -> int:
 		return self._red
