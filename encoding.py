@@ -30,7 +30,7 @@ class Encoder:
 			self.write_pixel(file, pixel)
 
 	def v2(self, file, ppb: int=1) -> None:
-		"""version 2.0 of the ULBMP format"""
+		"""version 2.0 of the ULBMP format using Run-Length Encoding"""
 		i = 0
 
 		while i < len(self.img.pixels):
@@ -47,35 +47,45 @@ class Encoder:
 	def v3(self, file) -> None:
 		"""version 3.0 of the ULBMP format"""
 		self.colors = list(self.colors)
-		# print(self.depth, self.rle, self.colors)
-		#chekc valid values
+		
 		if (self.depth < 1 or self.depth > 24):
 			raise Exception('Invalid depth')
 		if (self.depth <= 8 and len(self.colors) > (1 << self.depth)):
 			raise Exception(f'Invalid number of colors. \nGot {len(self.colors)}\nExpected {1 << self.depth}')
-		if (self.depth <= 8): # TODO : check if always works + rle
-			pixels_per_byte = 8 // self.depth
-			total_pixels = self.img.width * self.img.height
-			pixels = self.img.pixels
-			
+		
+		if (self.depth > 8):
+			self.v1(file) if (not self.rle) else self.v2(file)
+			return
+
+		pixels_per_byte = 8 // self.depth
+		total_pixels = self.img.width * self.img.height
+		pixels = self.img.pixels
+
+		if self.depth == 8 and self.rle:
+			# Run-Length Encoding
+			i = 0
+			while i < total_pixels:
+				run_val = pixels[i]
+				run_len = 1
+
+				while (i + run_len < total_pixels) and (pixels[i + run_len] == run_val) and (run_len < 255):
+					run_len += 1
+
+				file.write(run_len.to_bytes(1, byteorder='little'))  # Write run length
+				file.write(self.colors.index(run_val).to_bytes(1, byteorder='little'))  # Write run value
+
+				i += run_len
+		else:
 			for i in range(0, total_pixels, pixels_per_byte):
 				byte = 0
 
 				for j in range(pixels_per_byte):
 					if (i + j >= total_pixels):
 						break
-					print(self.colors.index(pixels[i + j]))
+
 					byte |= (self.colors.index(pixels[i + j]) << ((pixels_per_byte - 1 - j) * self.depth))
 				
 				file.write(byte.to_bytes(1, byteorder='little'))
-		else:
-			if (not self.rle):
-				self.v1(file)
-			else:
-				self.v2(file)
-
-
-
 
 	def save_to(self, path: str) -> None: #TODO: Implement this method using ULBMP any version
 		"""Save the image to a file in the ULBMP format."""
@@ -152,7 +162,21 @@ class Decoder:
 		"""
 		pixels = []
 
-		if (self.depth <= 8):
+		if self.depth == 8 and self.compression:
+			# Run-Length Encoding with 8bpp
+			i = self.header_len
+			while i < len(bytes):
+				# Get the run length and the pixel color index
+				run_length = bytes[i]
+				pixel_index = bytes[i + 1]
+
+				# Append the pixel color to the pixels list run_length times
+				pixel = self.palette[pixel_index]
+				pixels.extend([pixel] * run_length)
+
+				# Move to the next run
+				i += 2
+		elif (self.depth <= 8):
 			pixels_per_byte = 8 // self.depth
 			total_pixels = self.width * self.height
 
@@ -164,7 +188,6 @@ class Decoder:
 						break
 
 					pixel_index = (byte >> (j * self.depth)) & ((1 << self.depth) - 1)
-					# print(pixel_index, self.palette[pixel_index])
 					pixel = self.palette[pixel_index]
 					pixels.append(pixel)
 		else:
@@ -174,14 +197,11 @@ class Decoder:
 				bytes_per_pixel += 1
 
 			for i in range(self.header_len, len(bytes), bytes_per_pixel):
-				if ((self.depth == 8 or self.depth == 24) and self.compression): # RLE
+				if (self.depth == 24 and self.compression): # RLE
 					for j in range(bytes[i]):
 						pixels.append(Pixel(bytes[i+1], bytes[i+2], bytes[i+3]))
 				else:
 					pixels.append(Pixel(bytes[i], bytes[i+1], bytes[i+2]))
-
-		# print(len(pixels))
-		# print(self.width * self.height)
 		return pixels
 
 	def read_pixels(self, bytes: bytes) -> list[Pixel]:
