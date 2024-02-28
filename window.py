@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
 			except Exception as e:
 				return self.error_message(f"Decoder error: {str(e)}")
 			
-			# self.scene.clear()
+			self.scene.clear()
 			self.scene.addPixmap(pixmap)
 			self.graphics_view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
 			self.graphics_view.show()

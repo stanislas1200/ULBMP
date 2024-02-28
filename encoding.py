@@ -203,6 +203,114 @@ class Decoder:
 				else:
 					pixels.append(Pixel(bytes[i], bytes[i+1], bytes[i+2]))
 		return pixels
+	
+	"""
+	ULBMP_NEW_PIXEL
+	ULBMP_SMALL_DIFF
+	ULBMP_INTERMEDIATE_DIFF
+	ULBMP_BIG_DIFF
+
+	∆R := r2 −r1
+	∆R,G := ∆R −∆G
+
+	−2 ≤∆R, ∆G, ∆B ≤1 ULBMP_SMALL_DIFF. 2 bits
+	−32 ≤∆G ≤31 et −8 ≤∆R,G, ∆B,G ≤7 ULBMP_INTERMEDIATE_DIFF différence d’intensité en vert 6 bits other 4bits
+	−128 ≤∆R ≤127 et −32 ≤∆G,R, ∆B,R ≤31 ULBMP_BIG_DIFF type Red 8 bits other 6bits
+	2 bits type, 8 bits diff, 2 * 6 bits span other channels 
+
+
+	"""
+	def v4(self, bytes: bytes) -> list[Pixel]:
+		"""version 4.0 of the ULBMP format usign QOL approach"""
+		pixels = []
+		#P’ = Pixel noir = (0, 0, 0)
+		oldPixel = Pixel(0, 0, 0)
+		i = self.header_len
+		while i < len(bytes):
+			# read a byte
+			byte = bytes[i]
+			# get the type
+			if (byte == 0b11111111 == 0b11111111): # OK
+				# ULBMP_NEW_PIXEL
+				# read 3 bytes
+				oldPixel = Pixel(bytes[i+1], bytes[i+2], bytes[i+3])
+				pixels.append(oldPixel)
+
+				i += 3
+			elif (byte & 0b11000000 == 0b00000000): # OK
+				# ULBMP_SMALL_DIFF
+				# 2 bits r, 2 bits g, 2 bits b
+				Dr = ((byte & 0b00110000) >> 4) -2
+				Dg = ((byte & 0b00001100) >> 2) -2
+				Db = ((byte & 0b00000011)) -2
+				# get the new pixel
+				# print("Small " , oldPixel.red + Dr, oldPixel.green + Dg, oldPixel.blue + Db)
+				newPixel = Pixel(oldPixel.red + Dr, oldPixel.green + Dg, oldPixel.blue + Db)
+				# append the new pixel
+				pixels.append(newPixel)
+				# update the old pixel
+				oldPixel = newPixel
+
+				# i += 1
+			elif (byte & 0b11000000 == 0b01000000): # OK
+				# print("ULBMP_INTERMEDIATE_DIFF")
+				# ULBMP_INTERMEDIATE_DIFF
+				# 2 bits type, 6 bits diff, 4 bits 
+				Dg = (byte & 0b00111111) - 32
+				Drg = ((bytes[i+1] & 0b11110000) >> 4) - 8
+				Dbg = (bytes[i+1] & 0b00001111) - 8
+				# get delta
+				Dr = Drg + Dg
+				Db = Dbg + Dg
+				# get the new pixel
+				# print("IT " , oldPixel.red + Dr, oldPixel.green + Dg, oldPixel.blue + Db)
+				newPixel = Pixel(oldPixel.red + Dr, oldPixel.green + Dg, oldPixel.blue + Db)
+				# append the new pixel
+				pixels.append(newPixel)
+				# update the old pixel
+				oldPixel = newPixel
+
+				i += 1
+			elif (byte & 0b10000000 == 0b10000000): # KO
+				# print("ULBMP_BIG_DIFF")
+				# ULBMP_BIG_DIFF
+				big_diff = (((byte & 0b00001111) << 4) | ((bytes[i+1] & 0b11110000) >> 4)) - 128
+				D1 = (((bytes[i+1] & 0b00001111) << 2) | ((bytes[i+2] & 0b11000000) >> 6)) - 32
+				D2 = ((bytes[i+2] & 0b00111111)) - 32
+
+				if (byte & 0b11110000 == 0b10100000):
+					# blue
+					Dr = D1 + big_diff
+					Dg = D2 + big_diff
+					Db = big_diff
+				elif (byte & 0b11110000 == 0b10010000):
+					# green
+					Dr = D1 + big_diff
+					Db = D2 + big_diff
+					Dg = big_diff
+				else:
+					# red
+					Dg = D1 + big_diff
+					Db = D2 + big_diff
+					Dr = big_diff
+				# get the new pixel
+				# newPixel = Pixel(min(oldPixel.red + Dr, 255), min(oldPixel.green + Dg, 255), min(oldPixel.blue + Db, 255))
+				# newPixel = Pixel(238, 0, 205)
+				# print("BIG " , oldPixel.red + Dr, oldPixel.green + Dg, oldPixel.blue + Db)
+				# print(oldPixel.red, oldPixel.green, oldPixel.blue)
+				# print(Dr, Dg, Db)
+				newPixel = Pixel(oldPixel.red + Dr, oldPixel.green + Dg, oldPixel.blue + Db)
+				# append the new pixel
+				pixels.append(newPixel)
+				# update the old pixel
+				oldPixel = newPixel
+
+				i += 2
+			# else :
+			# 	print(f'Unsupported version 4.0 byte {bin(byte)}')
+			i += 1
+		# print(pixels)
+		return pixels
 
 	def read_pixels(self, bytes: bytes) -> list[Pixel]:
 		"""Read the pixels from the file."""
@@ -215,6 +323,8 @@ class Decoder:
 				pixels = self.v2(bytes)
 			case 3:
 				pixels = self.v3(bytes)
+			case 4:
+				pixels = self.v4(bytes)
 			case _:
 				raise Exception(f'Unsupported version {self.version}')
 		return pixels
@@ -240,7 +350,7 @@ class Decoder:
 		if (self.width <= 0 or self.height <= 0):
 			raise Exception('Invalid dimensions')
 		
-		match self.version:
+		match self.version: # TODO : remake checker
 			case 1:
 				if (self.header_len < 12):
 					raise Exception('Invalid header size')
@@ -256,7 +366,6 @@ class Decoder:
 				for i in range(14, self.header_len, 3):
 					self.palette.append(Pixel(bytes[i], bytes[i+1], bytes[i+2]))
 				# print(self.depth, self.compression, self.palette)
-
 			case 4:
 				if (self.header_len < 12):
 					raise Exception('Invalid header size')
