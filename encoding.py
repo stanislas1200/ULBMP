@@ -87,6 +87,47 @@ class Encoder:
 				
 				file.write(byte.to_bytes(1, byteorder='little'))
 
+	def v4_bigDiff(self, type, DM, D2, D3, file) -> None:
+		byte = type | ((DM + 128) & 0b11110000) >> 4
+		byte1 = ((DM + 128) & 0b00001111) << 4 | ((D2 - DM + 32) & 0b111100) >> 2
+		byte2 = ((D2 - DM + 32) & 0b00000011) << 6 | ((D3 - DM + 32) & 0b00111111)
+		# print(bin(byte), bin(byte1), bin(byte2))
+		file.write(byte.to_bytes(1, byteorder='little'))
+		file.write(byte1.to_bytes(1, byteorder='little'))
+		file.write(byte2.to_bytes(1, byteorder='little'))
+
+	def v4(self, file) -> None:
+		"""version 4.0 of the ULBMP format using QOL approach"""
+		oldPixel = Pixel(0, 0, 0)
+		for pixel in self.img.pixels:
+			Dr = pixel.red - oldPixel.red
+			Dg = pixel.green - oldPixel.green
+			Db = pixel.blue - oldPixel.blue
+			if -2 <= Dr <= 1 and -2 <= Dg <= 1 and -2 <= Db <= 1:
+				# ULBMP_SMALL_DIFF
+				byte = (Dr + 2) << 4 | ((Dg + 2) << 2) | ((Db + 2))
+				file.write(byte.to_bytes(1, byteorder='little'))
+			elif (-32 <= Dg <= 31) and (-8 <= Dr - Dg <= 7 and -8 <= Db - Dg <= 7):
+				# ULBMP_INTERMEDIATE_DIFF
+				byte = (1 << 6) | (Dg + 32)
+				byte1 = ((Dr - Dg + 8) << 4) | (Db - Dg + 8)
+				file.write(byte.to_bytes(1, byteorder='little'))
+				file.write(byte1.to_bytes(1, byteorder='little'))
+			elif (-128 <= Dr <= 127) and (-32 <= Dg - Dr <= 31 and -32 <= Db - Dr <= 31):
+				# ULBMP_BIG_DIFF red
+				self.v4_bigDiff(0b10000000, Dr, Dg, Db, file)
+			elif (-128 <= Dg <= 127) and (-32 <= Dr - Dg <= 31 and -32 <= Db - Dg <= 31):
+				# ULBMP_BIG_DIFF green
+				self.v4_bigDiff(0b10010000, Dg, Dr, Db, file)
+			elif (-128 <= Db <= 127) and (-32 <= Dr - Db <= 31 and -32 <= Dg - Db <= 31):
+				# ULBMP_BIG_DIFF blue
+				self.v4_bigDiff(0b10100000, Db, Dr, Dg, file)
+			else:
+				# ULBMP_NEW_PIXEL
+				file.write((0b11111111).to_bytes(1, byteorder='little'))
+				self.write_pixel(file, pixel)
+			oldPixel = pixel
+
 	def save_to(self, path: str) -> None: #TODO: Implement this method using ULBMP any version
 		"""Save the image to a file in the ULBMP format."""
 		with open(path, 'wb') as file:
@@ -114,6 +155,8 @@ class Encoder:
 						for color in self.colors:
 							self.write_pixel(file, color)
 					self.v3(file)
+				case 4:
+					self.v4(file)
 				case _:
 					raise Exception(f'Unsupported version {self.version}') # TODO : raise before writing
 
@@ -271,7 +314,7 @@ class Decoder:
 				oldPixel = newPixel
 
 				i += 1
-			elif (byte & 0b10000000 == 0b10000000): # KO
+			elif (byte & 0b10000000 == 0b10000000): # ok
 				# print("ULBMP_BIG_DIFF")
 				# ULBMP_BIG_DIFF
 				big_diff = (((byte & 0b00001111) << 4) | ((bytes[i+1] & 0b11110000) >> 4)) - 128
@@ -294,11 +337,6 @@ class Decoder:
 					Db = D2 + big_diff
 					Dr = big_diff
 				# get the new pixel
-				# newPixel = Pixel(min(oldPixel.red + Dr, 255), min(oldPixel.green + Dg, 255), min(oldPixel.blue + Db, 255))
-				# newPixel = Pixel(238, 0, 205)
-				# print("BIG " , oldPixel.red + Dr, oldPixel.green + Dg, oldPixel.blue + Db)
-				# print(oldPixel.red, oldPixel.green, oldPixel.blue)
-				# print(Dr, Dg, Db)
 				newPixel = Pixel(oldPixel.red + Dr, oldPixel.green + Dg, oldPixel.blue + Db)
 				# append the new pixel
 				pixels.append(newPixel)

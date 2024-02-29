@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
 		try:
 			colors = self.getColors()
 			print(len(colors))
-			version, ok = QInputDialog.getInt(self, "Version", "Enter the version:", 1, 1, 3)
+			version, ok = QInputDialog.getInt(self, "Version", "Enter the version:", 1, 1, 4)
 
 			if (not ok):
 				return
