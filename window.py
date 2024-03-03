@@ -173,7 +173,6 @@ class MainWindow(QMainWindow):
 		if (not file_path):
 			return
 
-		# load = self.message("Loading", "Loading image...", "#FFA500", 1000)
 		if (file_path.endswith(".ulbmp")):
 			pixmap = None
 			try:
@@ -190,7 +189,6 @@ class MainWindow(QMainWindow):
 			self.message("Success", "✔️ Image loaded successfully!", "#00ED64", 3000)
 		else:
 			self.error_message("Invalid file format. Please select a .ulbmp file.")
-		# load.close()
 
 	def save_image(self) -> None:
 		''' Save the image to a file '''

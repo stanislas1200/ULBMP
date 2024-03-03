@@ -16,6 +16,15 @@ class Encoder:
 		self.rle: bool = kwargs.get('rle', 0)
 		self.colors = kwargs.get('colors', 0)
 
+		if (self.version == 3 and not self.colors): # For tester...
+			'''get a set of colors from the image'''
+			self.colors = set()
+
+			for y in range(self.img.height):
+				for x in range(self.img.width):
+					pixel = self.img[x, y]
+					self.colors.add(pixel)
+
 	def write_pixel(self, file, pixel: Pixel, ppb: int=1) -> None:
 		"""Write a pixel to the file.
 		:param file: The file to write to. This should be a file-like object (i.e., an object that has a `write()` method).
@@ -36,8 +45,8 @@ class Encoder:
 		while i < len(self.img.pixels):
 			pixel = self.img.pixels[i]
 			run_length = 1
-
-			while (i + run_length) < len(self.img.pixels) and self.img.pixels[i + run_length] == pixel: # TODO : check if run_length < 255 1 byte
+			# fix overflow run_length < 255
+			while run_length < 255 and (i + run_length) < len(self.img.pixels) and self.img.pixels[i + run_length] == pixel: # TODO : check if run_length < 255 1 byte
 				run_length += 1
 
 			file.write(run_length.to_bytes(1, byteorder='little'))
@@ -88,6 +97,7 @@ class Encoder:
 				file.write(byte.to_bytes(1, byteorder='little'))
 
 	def v4_bigDiff(self, type, DM, D2, D3, file) -> None:
+		"""version 4.0 Big Block of the ULBMP format using QOL approach"""
 		byte = type | ((DM + 128) & 0b11110000) >> 4
 		byte1 = ((DM + 128) & 0b00001111) << 4 | ((D2 - DM + 32) & 0b111100) >> 2
 		byte2 = ((D2 - DM + 32) & 0b00000011) << 6 | ((D3 - DM + 32) & 0b00111111)
@@ -128,9 +138,10 @@ class Encoder:
 				self.write_pixel(file, pixel)
 			oldPixel = pixel
 
-	def save_to(self, path: str) -> None: #TODO: Implement this method using ULBMP any version
+	def save_to(self, path: str) -> None:
 		"""Save the image to a file in the ULBMP format."""
 		with open(path, 'wb') as file:
+			# TODO : write header function
 			file.write(b"ULBMP")
 			file.write(self.version.to_bytes(1, byteorder='little')) # 1.0 version
 			if (self.version == 3):
@@ -160,18 +171,23 @@ class Encoder:
 				case _:
 					raise Exception(f'Unsupported version {self.version}') # TODO : raise before writing
 
-class Decoder:
-	"""Decodes an image from the ULBMP format."""
-	def load_from(self, path: str) -> Image: #TODO: Implement this method using ULBMP any version
+class Decoder: # for tester...
+	@staticmethod
+	def load_from(path: str) -> Image:
 		"""Load an image from a file in the ULBMP format."""
-		if (path.endswith('.ulbmp') == False):
-			raise Exception('Invalid file format')
+		return Decoder1().load_from(path)
+
+class Decoder1: # TODO : static methode
+	"""Decodes an image from the ULBMP format."""
+	def load_from(self, path: str) -> Image:
+		"""Load an image from a file in the ULBMP format."""
+		# if (path.endswith('.ulbmp') == False): # removed for tester...
+		# 	raise Exception('Invalid file format')
 		
 		# read bytes from file
 		with open(path, 'rb') as file:
 			bytes = file.read()
 			self.read_header(bytes)
-			print(self)
 			pixels = self.read_pixels(bytes)
 			return Image(self.width, self.height, pixels)
 

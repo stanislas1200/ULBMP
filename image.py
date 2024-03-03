@@ -10,6 +10,8 @@ class Image:
 			raise Exception('Invalid dimensions')
 		if len(pixels) != width * height:
 			raise Exception('Invalid number of pixels')
+		if (not all(isinstance(p, Pixel) for p in pixels)):
+			raise Exception('Invalid pixel type')
 		
 		self.width = width
 		self.height = height

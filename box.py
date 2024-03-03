@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QLabel, QDialog, QVBoxLayout, QCheckBox, QComboBox, QDialogButtonBox
 
 class CustomDialog(QDialog):
+	''' Custom dialog for the application '''
 	def __init__(self, parent=None):
 		super().__init__(parent)
 
